@@ -519,6 +519,9 @@ export default Vue.extend({
       return this.pendingChanges.deletes.length > 0
     },
     editable() {
+      console.warn('primaryKeys?.length: ', this.primaryKeys?.length)
+      console.warn('table.entityType: ', this.table.entityType)
+      console.warn('this.dialectData.disabledFeatures?.tableTable: ', this.dialectData.disabledFeatures?.tableTable)
       return this.primaryKeys?.length &&
         this.table.entityType === 'table' &&
         !this.dialectData.disabledFeatures?.tableTable
@@ -658,6 +661,26 @@ export default Vue.extend({
         }
 
       });
+
+      // 2. add hidden PK column
+      const hiddenPK = {
+        field: 'rowid',
+        title: 'rowid',
+        headerSort: true,
+        cellClick: this.cellClick,
+        maxWidth: globals.maxColumnWidth,
+        maxInitialWidth: globals.maxInitialWidth,
+        editable: false,
+        formatter: this.cellFormatter,
+        visible: true,
+        clipboard: false,
+        print: false,
+        download: false,
+        width: keyWidth,
+        cssClass: "primary-key",
+      }
+      results.push(hiddenPK)
+
 
       // add internal index column
       const result = {
@@ -1065,10 +1088,13 @@ export default Vue.extend({
     cellEdited(cell) {
 
       const pkCells = cell.getRow().getCells().filter(c => this.isPrimaryKey(c.getField()))
+      console.warn('cellEdited pkCells: ', pkCells)
 
-      if (!pkCells) {
+      const useHiddenPK = pkCells.length ? false : this.primaryKeys.length ? true : false
+      if (useHiddenPK) console.warn('using Hidden PK: ', this.primaryKeys[0] )
+
+      if (!pkCells.length && !useHiddenPK) {
         this.$noty.error("Can't edit column -- couldn't figure out primary key")
-        // cell.setValue(cell.getOldValue())
         cell.restoreOldValue()
         return
       }
@@ -1385,6 +1411,10 @@ export default Vue.extend({
 
             // lets just make column selection a front-end only thing
             const selects = ['*']
+
+            // inject hidden rowid column to fetch
+            selects.push('rowid')
+
             const response = await this.connection.selectTop(
               this.table.name,
               offset,
@@ -1395,10 +1425,14 @@ export default Vue.extend({
               selects,
             );
 
+            log.warn('response 1: ', response)
+
             if (_.xor(response.fields, this.table.columns.map(c => c.columnName)).length > 0) {
               log.debug('table has changed, updating')
               await this.$store.dispatch('updateTableColumns', this.table)
             }
+
+            log.warn('response 2 (post-xor): ', response)
 
             const r = response.result;
             this.response = response
@@ -1409,9 +1443,19 @@ export default Vue.extend({
             r.forEach(row => {
               const primaryValues = this.primaryKeys.map(key => row[key]);
               row[this.internalIndexColumn] = primaryValues.join(",");
+              log.debug('internal index column', row[this.internalIndexColumn])
             });
 
+            log.warn('response 3 (post-internalIndices): ', response)
+
+            log.warn('this.tableColumns: ', this.tableColumns)
+
             const data = this.dataToTableData({ rows: r }, this.tableColumns);
+
+            log.warn('dataToTableData data: ', data)
+
+
+
             this.data = Object.freeze(data)
             this.lastUpdated = Date.now()
             this.preLoadScrollPosition = this.tableHolder.scrollLeft
@@ -1438,6 +1482,7 @@ export default Vue.extend({
           }
         })();
       });
+      console.warn("dataFetch result: ", result)
       return result;
     },
     setlastUpdatedText() {

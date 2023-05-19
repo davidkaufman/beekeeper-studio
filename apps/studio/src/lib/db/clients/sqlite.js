@@ -247,6 +247,7 @@ export async function updateValues(cli, updates) {
     })
 
     const where = whereList.join(" AND ");
+    console.warn(`updateValues where: '${where}'`)
 
     return {
       query: `UPDATE ${update.table} SET ${update.column} = ? WHERE ${where}`,
@@ -434,12 +435,16 @@ export async function getPrimaryKeys(conn, database, table) {
   const sql = `pragma table_info('${escapeString(table)}')`
   const { data } = await driverExecuteQuery(conn, { query: sql})
   const found = data.filter(r => r.pk > 0)
-  if (!found || found.length === 0) return []
-  return found.map((r) => ({
+  // if (!found || found.length === 0) return []
+  let found_pks = found.map((r) => ({
     columnName: r.name,
     position: Number(r.pk)
   }))
-
+  // return the internal (hidden) rowid column as the PK if no PK was found
+  if (found_pks.length === 0) {
+    found_pks = [ { columnName: 'rowid', position: 1 } ]
+  }
+  return found_pks
 }
 
 export async function getPrimaryKey(conn, database, table) {
